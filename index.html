@@ -117,7 +117,7 @@ function fmtClock(iso) {
 function render(arrivals) {
   arrivals.sort((a, b) => a.timeToStation - b.timeToStation);
   if (!arrivals.length) {
-    list.innerHTML = `<li class="empty">No 4s due right now.</li>`;
+    list.innerHTML = `<li class="empty">No live times for the 4 right now. TfL often stops reporting this route; buses may still be running.</li>`;
     return;
   }
   list.innerHTML = "";
