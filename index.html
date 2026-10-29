@@ -31,20 +31,24 @@
   .sub { color: var(--muted); font-size: 14px; }
   ul { list-style: none; margin: 0; padding: 0; }
   li.bus {
-    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-    padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: baseline; gap: 12px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px 18px 16px; margin-bottom: 12px;
   }
-  .mins { font-size: 36px; font-weight: 700; min-width: 3.2em; font-variant-numeric: tabular-nums; }
-  .mins small { font-size: 16px; font-weight: 500; }
-  .dest { flex: 1; }
-  .clock { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .mins {
+    font-size: 64px; font-weight: 700; line-height: 1; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .mins small { font-size: 0.4em; font-weight: 600; letter-spacing: 0; }
+  li.bus:first-child .mins { font-size: clamp(96px, 34vw, 160px); }
+  .meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 20px; }
+  .clock { color: var(--muted); font-variant-numeric: tabular-nums; }
   .status { color: var(--muted); font-size: 14px; margin-top: 16px; text-align: center; }
   .error { color: var(--red); }
   button {
     font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line);
     border-radius: 8px; padding: 10px 14px; margin: 4px 0; width: 100%; text-align: left;
   }
-  .empty { text-align: center; padding: 32px 0; color: var(--muted); }
+  .empty { text-align: center; padding: 32px 0; color: var(--muted); font-size: 22px; }
 </style>
 </head>
 <body>
@@ -117,7 +121,7 @@ function fmtClock(iso) {
 function render(arrivals) {
   arrivals.sort((a, b) => a.timeToStation - b.timeToStation);
   if (!arrivals.length) {
-    list.innerHTML = `<li class="empty">No live times for the 4 right now. TfL often stops reporting this route; buses may still be running.</li>`;
+    list.innerHTML = `<li class="empty">No live times for the 4 right now.</li>`;
     return;
   }
   list.innerHTML = "";
@@ -127,8 +131,10 @@ function render(arrivals) {
     li.className = "bus";
     li.innerHTML = `
       <div class="mins">${m < 1 ? "Due" : `${m}<small> min</small>`}</div>
-      <div class="dest">${a.destinationName || ""}</div>
-      <div class="clock">${fmtClock(a.expectedArrival)}</div>`;
+      <div class="meta">
+        <span class="dest">${a.destinationName || ""}</span>
+        <span class="clock">${fmtClock(a.expectedArrival)}</span>
+      </div>`;
     list.appendChild(li);
   }
 }
