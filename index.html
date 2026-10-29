@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bus 4</title>
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #f4f4f4; --fg: #111; --muted: #666; --card: #fff; --red: #dc241f; --line: #ddd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111; --fg: #f2f2f2; --muted: #999; --card: #1c1c1c; --line: #333; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px 32px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  .roundel {
+    flex: none; width: 56px; height: 56px; border-radius: 8px; background: var(--red); color: #fff;
+    display: grid; place-items: center; font-weight: 700; font-size: 32px;
+  }
+  h1 { margin: 0; font-size: 20px; }
+  .sub { color: var(--muted); font-size: 14px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li.bus {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: baseline; gap: 12px;
+  }
+  .mins { font-size: 36px; font-weight: 700; min-width: 3.2em; font-variant-numeric: tabular-nums; }
+  .mins small { font-size: 16px; font-weight: 500; }
+  .dest { flex: 1; }
+  .clock { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .status { color: var(--muted); font-size: 14px; margin-top: 16px; text-align: center; }
+  .error { color: var(--red); }
+  button {
+    font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 14px; margin: 4px 0; width: 100%; text-align: left;
+  }
+  .empty { text-align: center; padding: 32px 0; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="roundel">4</div>
+  <div>
+    <h1>Dartmouth Park Road</h1>
+    <div class="sub" id="stopinfo">Stop TA · southbound</div>
+  </div>
+</header>
+
+<ul id="list"></ul>
+<div class="status" id="status">Loading…</div>
+
+<script>
+const LINE = "4";
+const STOP_NAME = "Dartmouth Park Road";
+const STOP_LETTER = "TA";
+const REFRESH_MS = 30000;
+const API = "https://api.tfl.gov.uk";
+const STORE_KEY = "bus4-stop-id";
+
+const list = document.getElementById("list");
+const status = document.getElementById("status");
+const stopinfo = document.getElementById("stopinfo");
+
+let stopId = null;
+let timer = null;
+let lastFetched = null;
+
+function load(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function save(key, val) { try { localStorage.setItem(key, val); } catch {} }
+
+async function getJSON(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error("TfL returned " + res.status);
+  return res.json();
+}
+
+// Find the stop's NaPTAN ID from the route 4 stop list, matching name + stop letter.
+async function resolveStop() {
+  const stops = await getJSON(`${API}/Line/${LINE}/StopPoints`);
+  const named = stops.filter(s => (s.commonName || "").toLowerCase().includes(STOP_NAME.toLowerCase()));
+  const match = named.find(s =>
+    (s.stopLetter || "").toUpperCase() === STOP_LETTER ||
+    (s.indicator || "").toUpperCase() === "STOP " + STOP_LETTER);
+  if (match) return match.naptanId;
+  showPicker(named.length ? named : stops);
+  return null;
+}
+
+// Fallback if stop TA can't be matched: let the user tap the right stop once.
+function showPicker(candidates) {
+  status.textContent = "";
+  list.innerHTML = `<li class="empty">Couldn't find stop ${STOP_LETTER} automatically. Tap your stop:</li>`;
+  for (const s of candidates) {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.textContent = `${s.commonName} — ${s.indicator || s.stopLetter || "?"}`;
+    b.onclick = () => { save(STORE_KEY, s.naptanId); stopId = s.naptanId; refresh(); };
+    li.appendChild(b);
+    list.appendChild(li);
+  }
+}
+
+function fmtClock(iso) {
+  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+function render(arrivals) {
+  arrivals.sort((a, b) => a.timeToStation - b.timeToStation);
+  if (!arrivals.length) {
+    list.innerHTML = `<li class="empty">No 4s due right now.</li>`;
+    return;
+  }
+  list.innerHTML = "";
+  for (const a of arrivals) {
+    const m = Math.floor(a.timeToStation / 60);
+    const li = document.createElement("li");
+    li.className = "bus";
+    li.innerHTML = `
+      <div class="mins">${m < 1 ? "Due" : `${m}<small> min</small>`}</div>
+      <div class="dest">${a.destinationName || ""}</div>
+      <div class="clock">${fmtClock(a.expectedArrival)}</div>`;
+    list.appendChild(li);
+  }
+}
+
+function updateStatus() {
+  if (!lastFetched) return;
+  const s = Math.round((Date.now() - lastFetched) / 1000);
+  status.className = "status";
+  status.textContent = `Updated ${s < 5 ? "just now" : s + "s ago"} · tap to refresh`;
+}
+
+async function refresh() {
+  try {
+    if (!stopId) stopId = load(STORE_KEY);
+    if (!stopId) {
+      status.textContent = "Finding stop…";
+      stopId = await resolveStop();
+      if (!stopId) return;
+      save(STORE_KEY, stopId);
+    }
+    const arrivals = await getJSON(`${API}/StopPoint/${stopId}/Arrivals`);
+    if (arrivals.length && arrivals[0].platformName) {
+      stopinfo.textContent = `Stop ${arrivals[0].platformName} · towards ${arrivals[0].towards || "south"}`;
+    }
+    render(arrivals.filter(a => a.lineName === LINE));
+    lastFetched = Date.now();
+    updateStatus();
+  } catch (e) {
+    status.className = "status error";
+    status.textContent = `Couldn't load times (${e.message}). Tap to retry.`;
+  }
+}
+
+function start() {
+  clearInterval(timer);
+  refresh();
+  timer = setInterval(refresh, REFRESH_MS);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") start(); else clearInterval(timer);
+});
+status.addEventListener("click", refresh);
+setInterval(updateStatus, 5000);
+start();
+</script>
+</body>
+</html>
